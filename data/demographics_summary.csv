@@ -1,0 +1,15 @@
+Characteristic,Level,N
+Gender,Female,9
+Gender,Male,14
+Gender,Non-binary / third gender,1
+Age,18-24 years old,7
+Age,25-34 years old,13
+Age,35-44 years old,1
+Age,45-54 years old,2
+Age,55-64 years old,1
+DrivingExp,11+ years of experience,8
+DrivingExp,3-6 years of experience,11
+DrivingExp,7-10 years of experience,5
+GamingExp,0 years,13
+GamingExp,11+ years of experience,5
+GamingExp,3-6 years of experience,6
