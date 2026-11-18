@@ -18,6 +18,20 @@ suppressMessages({
 DATA <- if (dir.exists("data")) "data" else "../data"
 report <- function(label, value) cat(sprintf("  %-30s %s\n", label, value))
 
+# Shapiro-Wilk normality check, evaluated WITHIN each condition. This is the rule
+# informing (together with visual inspection of histograms / Q-Q plots and the
+# measurement type) the choice between the repeated-measures ANOVA and the
+# non-parametric Friedman test. Printed alongside each analysis for transparency.
+shapiro_by_condition <- function(df, dv, label) {
+  res <- df %>% group_by(Condition) %>%
+    summarise(p = tryCatch(shapiro.test(.data[[dv]])$p.value,
+                           error = function(e) NA_real_), .groups = "drop")
+  flag <- if (min(res$p, na.rm = TRUE) < .05) "non-normal in >=1 condition" else "normal in all conditions"
+  report(paste0("Normality: ", label),
+         paste0(paste(sprintf("%s=%.3f", res$Condition, res$p), collapse = ", "),
+                "  [", flag, "]"))
+}
+
 # -----------------------------------------------------------------------------
 # 1. Load the de-identified survey table and reshape to long (NTLX + SART)
 # -----------------------------------------------------------------------------
@@ -53,16 +67,19 @@ sart <- bind_rows(lapply(c("4_", "5_", "6_"), function(p)
 cat("\n== 2. Workload (NASA-TLX) ==\n")
 overall <- ntlx %>% group_by(P_ID, Condition) %>%
   summarise(Overall = mean(Score, na.rm = TRUE), .groups = "drop")
+shapiro_by_condition(overall, "Overall", "Overall workload")
 ow <- get_anova_table(anova_test(data = overall, dv = Overall, wid = P_ID, within = Condition))
 report("Overall workload ANOVA", sprintf("F=%.2f, ges=%.3f", ow$F[1], ow$ges[1]))
 overall %>% group_by(Condition) %>% summarise(M = mean(Overall), SD = sd(Overall)) %>% print()
 
 for (m in c("Mental Demand", "Frustration", "Effort", "Physical Demand", "Temporal Demand")) {
   d <- ntlx %>% filter(Metric_Label == m)
+  shapiro_by_condition(d, "Score", m)
   f <- friedman_test(data = d, Score ~ Condition | P_ID)
   report(paste(m, "Friedman"), sprintf("chi2=%.2f, p=%.3f", f$statistic, f$p))
 }
 perf_sub <- ntlx %>% filter(Metric_Label == "Performance")
+shapiro_by_condition(perf_sub, "Score", "Performance subscale")
 pa <- get_anova_table(anova_test(data = perf_sub, dv = Score, wid = P_ID, within = Condition))
 report("Performance subscale ANOVA", sprintf("F=%.2f, p=%.3f", pa$F[1], pa$p[1]))
 
@@ -81,6 +98,7 @@ sart_comp <- sart %>%
   pivot_wider(names_from = Cat, values_from = Total) %>%
   mutate(SART_Score = Understanding - (Demand - Supply))   # classic SART composite
 for (col in c("Demand", "Supply", "Understanding", "SART_Score")) {
+  shapiro_by_condition(sart_comp, col, paste("SART", col))
   a <- get_anova_table(anova_test(data = sart_comp, dv = !!sym(col), wid = P_ID, within = Condition))
   report(paste("SART", col, "ANOVA"), sprintf("F(%.0f,%.0f)=%.2f, p=%.3f", a$DFn[1], a$DFd[1], a$F[1], a$p[1]))
 }
@@ -106,9 +124,11 @@ cat("\n== 5. Performance ==\n")
 clean_rev <- function(path) read_csv(path, show_col_types = FALSE) %>%
   mutate(P_ID = gsub("participant_", "", Participant_ID), Condition = substr(Condition, 1, 1),
          P_ID = factor(P_ID), Condition = factor(Condition, levels = c("A", "B", "C")))
-frd <- function(d, rate, lab) { f <- friedman_test(data = d, as.formula(paste0("`", rate, "` ~ Condition | P_ID")))
+frd <- function(d, rate, lab) { shapiro_by_condition(d, rate, lab)
+  f <- friedman_test(data = d, as.formula(paste0("`", rate, "` ~ Condition | P_ID")))
   report(lab, sprintf("chi2=%.2f, p=%.3f", f$statistic, f$p)) }
-anv <- function(d, dv, lab) { a <- get_anova_table(anova_test(data = d, dv = !!sym(dv), wid = P_ID, within = Condition))
+anv <- function(d, dv, lab) { shapiro_by_condition(d, dv, lab)
+  a <- get_anova_table(anova_test(data = d, dv = !!sym(dv), wid = P_ID, within = Condition))
   report(lab, sprintf("F(%.2f,%.2f)=%.2f, p=%.3f", a$DFn[1], a$DFd[1], a$F[1], a$p[1])) }
 
 fine  <- clean_rev(file.path(DATA, "active_steering_reversals_summary.csv"))
